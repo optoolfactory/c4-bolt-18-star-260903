@@ -169,6 +169,20 @@ CURVATURE_HOLD_OPPOSITE_RELEASE = 0.01  # 1/m
 CURVATURE_HOLD_CONFIRM_MIN = 0.003  # 1/m (~7 deg) of wound curvature before capture
 CURVATURE_HOLD_CONFIRM_SWEPT = 0.6  # rad of heading swept this blinker cycle; past this the push is exit-shaping, not initiation
 
+# Pull-away twitch guard. modeld divides the action head's lateral-ACCELERATION output by
+# max(1, v)^2, so its residual at pull-away (~0.02 m/s^2, the head's noise floor) reads as
+# curvature 0.015 — 38 deg of wheel — where the same value at highway speed is 0.2 deg.
+# Route 78511c37 twitched on 10 of 10 straight takeoffs. The model's own planned path is the
+# tell: it read straight there while the action demanded 6-108x more.
+TWITCH_GUARD_MAX_SPEED = 4.0      # m/s; above this the 1/v^2 amplification is gone
+TWITCH_GUARD_FADE_SPEED = 3.0     # m/s; full strength below, faded out by MAX_SPEED
+TWITCH_GUARD_PLAN_RATIO = 4.0     # allowed |action| / |plan curvature|
+TWITCH_GUARD_FLOOR = 0.002        # 1/m (~5 deg); a near-zero probe must not clamp to nothing
+TWITCH_GUARD_STRAIGHT_LO = 0.005  # 1/m; a plain ratio is too permissive near straight (3x of
+TWITCH_GUARD_STRAIGHT_HI = 0.014  # 0.003 still licenses 22 deg), so fade the allowance out too
+TWITCH_GUARD_MIN_REACH = 12.0     # m; shorter plans read straight while the action legitimately
+                                  # unwinds a turn (ce2b186c51 seg 28 t=14.6). Twitches: p5 24 m
+
 
 def _plan_circle_curvature(xs, ys, lookahead: float) -> float:
   # curvature of the circle through the origin, tangent to the car's heading, passing
@@ -224,6 +238,25 @@ def get_plan_turn_onset_dist(model_v2) -> float:
 def get_plan_reach(model_v2) -> float:
   xs = model_v2.position.x
   return xs[-1] if len(xs) else 0.0
+
+
+def limit_curvature_to_plan(model_v2, curvature: float, v_ego: float) -> float:
+  # See TWITCH_GUARD_*. Magnitude only: the command is bounded, never reversed. FAR fit alone —
+  # the near probe swings with the car's heading error, so once a twitch has yawed the car it
+  # bends to correct it and licenses the very command that caused it (seg 10 t=53.1).
+  if v_ego >= TWITCH_GUARD_MAX_SPEED or curvature == 0.0:
+    return curvature
+  if get_plan_reach(model_v2) < TWITCH_GUARD_MIN_REACH:
+    return curvature
+  plan = abs(_plan_circle_curvature(model_v2.position.x, model_v2.position.y,
+                                    CURVATURE_HOLD_PLAN_LOOKAHEAD_FAR))
+  straightness = (plan - TWITCH_GUARD_STRAIGHT_LO) / (TWITCH_GUARD_STRAIGHT_HI - TWITCH_GUARD_STRAIGHT_LO)
+  limit = max(TWITCH_GUARD_PLAN_RATIO * plan * min(max(straightness, 0.0), 1.0), TWITCH_GUARD_FLOOR)
+  if abs(curvature) <= limit:
+    return curvature
+  fade = (TWITCH_GUARD_MAX_SPEED - v_ego) / (TWITCH_GUARD_MAX_SPEED - TWITCH_GUARD_FADE_SPEED)
+  fade = min(max(fade, 0.0), 1.0)
+  return curvature + (math.copysign(limit, curvature) - curvature) * fade
 
 
 def get_control_lateral_smooth_seconds(brand: str, v_ego: float, vehicle_smooth_seconds: float) -> float:
@@ -499,6 +532,10 @@ class Controls:
     # here is positive for RIGHT turns (pauseturn log: left turn at +148 deg steering
     # angle logs desiredCurvature -0.07), so the blinker maps right=+1, left=-1.
     blinker_dir = float(CS.rightBlinker) - float(CS.leftBlinker)
+    # Pull-away twitch guard (see TWITCH_GUARD_*). Requires no turn intent in play, so the
+    # pre-wind ratchet, turn lead and exit opposite-release never see a reduced command.
+    if CC.latActive and blinker_dir == 0.0 and self.turn_hold_curvature == 0.0:
+      new_desired_curvature = limit_curvature_to_plan(model_v2, new_desired_curvature, CS.vEgo)
     # heading swept in the blinker's direction over the whole blinker cycle (any speed):
     # discriminates a turn not yet made from one being exited (see the re-arm below)
     if blinker_dir == 0.0:
