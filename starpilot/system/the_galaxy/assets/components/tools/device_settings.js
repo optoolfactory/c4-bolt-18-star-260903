@@ -478,6 +478,16 @@ function formatSliderValue(val, stepStr, precisionInt, key) {
   return Number(v.toFixed(dec)).toString()
 }
 
+function formatReadoutValue(p) {
+  const raw = state.values[p.key]
+  const v = parseFloat(raw)
+  if (raw === undefined || raw === null || Number.isNaN(v)) return "--"
+
+  const precision = p.precision !== undefined && p.precision !== null ? Number(p.precision) : 2
+  const formatted = Number(v.toFixed(Math.max(0, precision))).toString()
+  return p.unit ? `${formatted}${p.unit}` : formatted
+}
+
 function formatNumericForInput(value, precision) {
   const n = Number(value)
   if (!Number.isFinite(n)) return ""
@@ -1492,6 +1502,7 @@ function renderSettingRow(p) {
   const isText = p.ui_type === "text"
   const isColor = p.ui_type === "color"
   const isAction = p.ui_type === "action"
+  const isReadout = p.ui_type === "readout"
   const isGroup = isGroupParam(p)
   const isChild = p.parent_key ? "ds-child-modifier" : ""
   const lockReason = () => getSettingLockReason(p)
@@ -1642,7 +1653,7 @@ function renderSettingRow(p) {
           @click="${() => resetColorParam(p)}">Stock</button>
       </div>
     `
-  } else if (!isGroup) {
+  } else if (!isGroup && !isReadout) {
     if (p.key === "IsRHD") {
       rowControl = html`
         <div style="display:flex; align-items:center; gap:0.75rem;">
@@ -1712,8 +1723,9 @@ function renderSettingRow(p) {
             </div>
           ` : ""}
         </div>
-        ${(isNumeric || isColor) ? html`<span class="ds-row-value" id="ds-display-${p.key}">${() => {
+        ${(isNumeric || isColor || isReadout) ? html`<span class="ds-row-value ${isReadout ? "ds-row-readout" : ""}" id="ds-display-${p.key}">${() => {
             if (isColor) return formatColorDisplayValue(p)
+            if (isReadout) return formatReadoutValue(p)
             const currentValue = state.sliderPreviewValues[p.key] ?? state.values[p.key]
             const bounds = numericBounds(p)
             return currentValue !== undefined ? formatSliderValue(currentValue, String(bounds.step), p.precision, p.key) : ".."

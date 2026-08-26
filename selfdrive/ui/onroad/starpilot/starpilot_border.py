@@ -57,7 +57,9 @@ def _csc_state():
 
   plan = sm["starpilotPlan"]
   params = ui_state.ui_params
-  if plan.speedLimitChanged or not params.get_bool("ShowCSCStatus"):
+  # A pending speed limit flashes the speed limit sign, not the border -- it has no reason
+  # to blank this, and doing so hid real curve slowdowns for the whole confirmation window.
+  if not params.get_bool("ShowCSCStatus"):
     return None
 
   car_state = sm["carState"]
