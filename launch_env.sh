@@ -29,6 +29,7 @@ if [ -z "$AGNOS_ACCEPTED_VERSIONS" ]; then
 fi
 
 export STAGING_ROOT="/data/safe_staging"
+export FINGERPRINT="CHEVROLET_BOLT_CC_2018_2021"
 
 # StarPilot variables (only available after StarPilot is installed to /data/openpilot)
 if [ -x /data/openpilot/starpilot/system/environment_variables ]; then
