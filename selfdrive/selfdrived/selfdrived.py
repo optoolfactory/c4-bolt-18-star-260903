@@ -196,7 +196,7 @@ class SelfdriveD:
     if SIMULATION:
       ignore += ['driverCameraState', 'managerState']
 
-    ignore += ['driverCameraState', 'managerState']
+    # ignore += ['driverCameraState', 'managerState']
     ignore += ['driverMonitoringState']
     
     if REPLAY:
@@ -424,6 +424,7 @@ class SelfdriveD:
     if not self.CP.pcmCruise and CS.vCruise > 250 and resume_pressed:
       self.events.add(EventName.resumeBlocked)
 
+    """
     if not self.CP.notCar:
       # Block engaging until lockout times out or ignition reset
       if self.sm['driverMonitoringState'].lockout and not self.dm_lockout_set:
@@ -447,6 +448,7 @@ class SelfdriveD:
       if self.sm['driverMonitoringState'].visionPolicyState.uncertainOffroadAlertPercent >= 100 and not self.dm_uncertain_alerted:
         set_offroad_alert("Offroad_DriverMonitoringUncertain", True)
         self.dm_uncertain_alerted = True
+    """
 
     # Add car events, ignore if CAN isn't valid
     if CS.canValid:
